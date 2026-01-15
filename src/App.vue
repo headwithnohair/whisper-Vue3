@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import {pipeline,env, AutomaticSpeechRecognitionPipeline, TextStreamer, PreTrainedTokenizer, AutoTokenizer, WhisperTextStreamer, WhisperTokenizer} from "@huggingface/transformers";
+import {pipeline,env, AutomaticSpeechRecognitionPipeline, WhisperTextStreamer, WhisperTokenizer} from "@huggingface/transformers";
 import { onBeforeUnmount, onMounted,reactive,ref } from "vue";
 import AudioChoose from "./compoment/ui/AudioChoose.vue";
 import AudioPlayer from "./compoment/ui/AudioPlayer.vue";
 const transcriber =ref<AutomaticSpeechRecognitionPipeline |null>(null);
 //   const CHUNK = 30;
 // const STRIDE = 5;
-// let windowIdx = 0;
+let windowIdx = 0;
 const audioUrl = ref<string>("");
   interface pp{
     timestamp: number[];
@@ -45,18 +45,16 @@ console.log("ok");
  */
 const textStreamer = async (transcriber:AutomaticSpeechRecognitionPipeline)=>{
   chunks_to_process.splice(0);
-  // windowIdx=0
-    console.log(chunks_to_process)
+  windowIdx=0
+  console.log(chunks_to_process)
 const tokenizer = transcriber.tokenizer as  WhisperTokenizer;
-// tokenizer._decode_asr()
-  const stem1 =new WhisperTextStreamer(tokenizer,{  
+const stem1 =new WhisperTextStreamer(tokenizer,{  
   skip_prompt: true,
   time_precision:0.02,
   on_chunk_start:on_chunk_start,
   on_chunk_end:on_chunk_end,
   callback_function:callback_function,
-  
-  // token_callback_function:(ee)=>{console.log(ee)}
+  token_callback_function:token_callback_function
 });
   const result = await transcriber(audioUrl.value, { 
   // max_new_tokens: 512,
@@ -64,8 +62,10 @@ const tokenizer = transcriber.tokenizer as  WhisperTokenizer;
   chunk_length_s: 30,        // 每块 30 秒   25 
   stride_length_s: 5,        // 重叠 5 秒（减少边界效应）
   language: 'en',            // 显式指定语言（见第 3 条）
-  return_timestamps:true,
+  return_timestamps:'word',
   streamer:stem1,
+  // force_full_sequences:true,
+
   
  });
  console.log(result);
@@ -74,49 +74,43 @@ const tokenizer = transcriber.tokenizer as  WhisperTokenizer;
 const changUrl=(newUrl:string)=>{
   audioUrl.value=newUrl;
 }
-
-function on_chunk_start(timestamps:number[]){
-  // const absS = timestamps + windowIdx * (CHUNK - STRIDE);
+function token_callback_function(token:bigint[]){
+}
+function on_chunk_start(timestamps:number){
   chunks_to_process.push( {
-          timestamp:[],
+          timestamp:[timestamps],
             tokens: [],
             finalised: false,
         },);
-        // console.log(chunks_to_process)
         console.log('start',timestamps);
-}
-function on_chunk_end(timestamp:number[]){
+      }
+function on_chunk_end(timestamp:number){
   console.log('end',timestamp);
-  // windowIdx++;
+  windowIdx++;
   //   // console.log('end',windowIdx);
 }
 function callback_function(tokenText:string){
-    let item=chunks_to_process[chunks_to_process.length-1] as pp;
-       item.tokens.push(tokenText);
+  console.log("callback_function")
+    console.log(chunks_to_process)
+    let item=chunks_to_process[windowIdx] as pp;
+    item.tokens.push(tokenText);
     
 }
 const startTrans =async (transcriber:AutomaticSpeechRecognitionPipeline)=>{
  console.log('======');
-const output = await transcriber(audioUrl.value,{
-  language:'ja',
-  top_k: 0,
-  do_sample: false,
-  // Sliding window
-  chunk_length_s: 30,        // 每块 30 秒
-  stride_length_s: 5,        // 重叠 5 秒（减少边界效应）
-  // Return timestamps
-  return_timestamps: true,
-  force_full_sequences: false,
-  // Callback functions
-})
+  const output = await transcriber(audioUrl.value,{
+    language:'ja',
+    top_k: 0,
+    do_sample: false,
+    // Sliding window
+    chunk_length_s: 30,        // 每块 30 秒
+    stride_length_s: 5,        // 重叠 5 秒（减少边界效应）
+    // Return timestamps
+    return_timestamps: true,
+    force_full_sequences: false,
+    // Callback functions
+  })
   console.log(output);
-  // const res=await transcriber(audioUrl.value,{
-  // chunk_length_s: 30,        // 每块 30 秒
-  // stride_length_s: 5,        // 重叠 5 秒（减少边界效应）
-  // language: 'en',            // 显式指定语言（见第 3 条）
-  // return_timestamps:true,
-  // })
-  // console.log(res);
 }
 onMounted(async()=>{
 })
@@ -144,7 +138,7 @@ onBeforeUnmount(()=>{
         <t-col> {{ item.timestamp }}</t-col>        <t-col> {{ item.tokens.join('') }}</t-col>
       </t-row>
   </div>
-   {{ windowIdx }}
+
 
 </template>
 
