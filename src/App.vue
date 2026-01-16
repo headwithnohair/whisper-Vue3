@@ -3,9 +3,20 @@ import {pipeline,env, AutomaticSpeechRecognitionPipeline, WhisperTextStreamer, W
 import { onBeforeUnmount, onMounted,reactive,ref } from "vue";
 import AudioChoose from "./compoment/ui/AudioChoose.vue";
 import AudioPlayer from "./compoment/ui/AudioPlayer.vue";
+const worker = new Worker(
+  new URL('./worker.js', import.meta.url),
+  { type: 'module' } // 如果你的 worker 使用 ES 模块语法（如 import/export）
+);
 const transcriber =ref<AutomaticSpeechRecognitionPipeline |null>(null);
-//   const CHUNK = 30;
-// const STRIDE = 5;
+  const cnm =()=>{
+    console.log('12312')
+  }
+const test =()=>{
+  worker.postMessage({pp:"asdas",op:'213',fun:cnm})
+}
+  worker.onmessage = (e) => {
+    console.log("Message received from worker0", e.data);
+  };
 let windowIdx = 0;
 const audioUrl = ref<string>("");
   interface pp{
@@ -13,7 +24,7 @@ const audioUrl = ref<string>("");
     tokens: string[];
     finalised: boolean;
 }
-let chunks_to_process =reactive<pp[]>([]);
+const chunks_to_process =reactive<pp[]>([]);
 const initModel =async ()=>{
   env.allowRemoteModels=true;
   env.allowLocalModels =false;
@@ -26,7 +37,7 @@ transcriber.value = await pipeline(
   {
   dtype: 'auto' ,
   // local_files_only: true,
-  progress_callback: (data: any) => console.log(data),
+  // progress_callback: (data: any) => console.log(data),
   device:"webgpu",
   
   }) as unknown as AutomaticSpeechRecognitionPipeline;
@@ -35,7 +46,7 @@ console.log("ok");
   }else{
   console.log('p')
   } 
-  } catch(e){
+  }catch(e){
     console.log(e);
   }
 }
@@ -54,18 +65,18 @@ const stem1 =new WhisperTextStreamer(tokenizer,{
   on_chunk_start:on_chunk_start,
   on_chunk_end:on_chunk_end,
   callback_function:callback_function,
-  token_callback_function:token_callback_function
+
 });
   const result = await transcriber(audioUrl.value, { 
-  // max_new_tokens: 512,
-  // do_sample: false, 
+  max_new_tokens: 512,
+  do_sample: false, 
   chunk_length_s: 30,        // 每块 30 秒   25 
   stride_length_s: 5,        // 重叠 5 秒（减少边界效应）
   language: 'en',            // 显式指定语言（见第 3 条）
-  return_timestamps:'word',
+  return_timestamps:true,
   streamer:stem1,
   // force_full_sequences:true,
-
+  
   
  });
  console.log(result);
@@ -74,28 +85,50 @@ const stem1 =new WhisperTextStreamer(tokenizer,{
 const changUrl=(newUrl:string)=>{
   audioUrl.value=newUrl;
 }
-function token_callback_function(token:bigint[]){
-}
+
 function on_chunk_start(timestamps:number){
-  chunks_to_process.push( {
+
+          console.log('start',timestamps);
+            const item =chunks_to_process[windowIdx];
+              if(!item)
+{
+  chunks_to_process.push({
           timestamp:[timestamps],
-            tokens: [],
-            finalised: false,
-        },);
-        console.log('start',timestamps);
-      }
+          tokens: [],
+          finalised: false,
+        });
+}
+}
+
 function on_chunk_end(timestamp:number){
   console.log('end',timestamp);
-  windowIdx++;
-  //   // console.log('end',windowIdx);
+
+  const item =chunks_to_process[windowIdx];
+  if(item)
+{
+  item.finalised=true
+}
 }
 function callback_function(tokenText:string){
-  console.log("callback_function")
-    console.log(chunks_to_process)
-    let item=chunks_to_process[windowIdx] as pp;
-    item.tokens.push(tokenText);
-    
+// console.log('callback_function',tokenText)
+
+  let item=chunks_to_process[windowIdx] ;
+    // console.log(item,windowIdx,chunks_to_process)
+    if(item)
+{ item.tokens.push(tokenText)
+  if(item.finalised)
+  {    
+    windowIdx++; 
+  }
+}else{
+  chunks_to_process.push({
+     timestamp:[],
+            tokens: [tokenText],
+            finalised: false,
+  })
 }
+}
+
 const startTrans =async (transcriber:AutomaticSpeechRecognitionPipeline)=>{
  console.log('======');
   const output = await transcriber(audioUrl.value,{
@@ -133,6 +166,10 @@ onBeforeUnmount(()=>{
       </t-button>
       <t-button @click="textStreamer(transcriber as AutomaticSpeechRecognitionPipeline )" :disable='transcriber===null'>
        流式执行模型
+      </t-button>
+      worker
+           <t-button @click="test">
+       test worker
       </t-button>
       <t-row v-for="item in chunks_to_process">
         <t-col> {{ item.timestamp }}</t-col>        <t-col> {{ item.tokens.join('') }}</t-col>
